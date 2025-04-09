@@ -1,0 +1,569 @@
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("../R/settings.R", local = knitr::knit_global())
+source("../R/data.R", local = knitr::knit_global())
+source("../R/utils.R", local = knitr::knit_global())
+```
+
+
+# Data Prep
+## Train
+```{r}
+colSums(is.na(train))
+str(train)
+```
+
+
+```{r}
+# #Train imputation
+# 
+# train <- train %>%
+#   mutate(
+#     Episode_Length_minutes = if_else(
+#       is.na(Episode_Length_minutes),
+#       median(train$Episode_Length_minutes, na.rm = TRUE),
+#       Episode_Length_minutes
+#     ),
+#     Guest_Popularity_percentage = if_else(
+#       is.na(Guest_Popularity_percentage),
+#       median(train$Guest_Popularity_percentage, na.rm = TRUE),
+#       Guest_Popularity_percentage
+#     ),
+#     Number_of_Ads = if_else(
+#       is.na(Number_of_Ads),
+#       median(train$Number_of_Ads, na.rm = TRUE),
+#       Number_of_Ads
+#     )
+#   )
+```
+
+
+
+
+## Test
+```{r}
+colSums(is.na(test))
+str(test)
+
+# #Test imputation Median
+# test <- test %>%
+#   mutate(
+#     Episode_Length_minutes = if_else(
+#       is.na(Episode_Length_minutes),
+#       median(test$Episode_Length_minutes, na.rm = TRUE),
+#       Episode_Length_minutes
+#     ),
+#     Guest_Popularity_percentage = if_else(
+#       is.na(Guest_Popularity_percentage),
+#       median(test$Guest_Popularity_percentage, na.rm = TRUE),
+#       Guest_Popularity_percentage
+#     )
+#   )
+```
+
+
+
+## Viz
+```{r}
+train %>%
+  ggplot( aes(x=Listening_Time_minutes)) +
+    geom_density(fill="#69b3a2", color="#e9ecef", alpha=0.8) 
+```
+
+```{r}
+cor <- train %>% select(Episode_Length_minutes, Host_Popularity_percentage, Guest_Popularity_percentage, Number_of_Ads, Listening_Time_minutes) %>% na.omit()
+M = cor(cor)
+corrplot(M, method = 'number') # colorful number
+```
+
+```{r}
+# z.B. nur 10.000 Zeilen für Demonstration
+train_small <- sample_n(train, 10000)
+
+
+ggpairs(
+  data = train_small,
+  columns = c("Genre", "Listening_Time_minutes", "Publication_Time", "Episode_Sentiment"),
+#  mapping = aes(color = Genre),  # Factor zur Farbgebung
+  lower = list(
+    continuous = "points", 
+    combo = "box",      # Bei Kombination aus factor & numerisch
+    discrete = "facetbar" # Bei factor vs. factor
+  ),
+  diag = list(
+    continuous = "densityDiag",
+    discrete = "barDiag"
+  ),
+  upper = list(
+    continuous = wrap("cor", size = 3),
+    combo = "box",
+    discrete = "blank"
+  )
+) +
+  theme_minimal()
+
+
+```
+```{r}
+
+train_small <- sample_n(train, 10000)
+
+ggpairs(
+  data = train_small,
+  columns = c("Episode_Length_minutes", "Listening_Time_minutes", "Host_Popularity_percentage", "Guest_Popularity_percentage", "Number_of_Ads"),
+#  mapping = aes(color = Genre),  # Factor zur Farbgebung
+  lower = list(
+    continuous = "points", 
+    combo = "box",      # Bei Kombination aus factor & numerisch
+    discrete = "facetbar" # Bei factor vs. factor
+  ),
+  diag = list(
+    continuous = "densityDiag",
+    discrete = "barDiag"
+  ),
+  upper = list(
+    continuous = wrap("cor", size = 3),
+    combo = "box",
+    discrete = "blank"
+  )
+) +
+  theme_minimal()
+
+
+```
+
+# Training
+
+## LM
+```{r}
+set.seed(123)     # Für reproduzierbare Zufallsergebnisse
+K <- 5            # Anzahl der Folds
+N <- nrow(train)
+
+# 1. Erstelle einen Zufalls-Vektor, der jedem Datenpunkt 
+#    einen Fold (1..K) zuweist:
+folds <- sample(rep(1:K, length.out = N))
+
+# 2. Crossvalidation-Schleife
+cv_rmse <- numeric(K)  # Hier sammeln wir die RMSE-Werte pro Fold
+
+# Variablen zum Speichern des "besten" Modells und seines RMSE:
+best_model <- NULL
+best_rmse  <- Inf
+
+for (i in 1:K) {
+  # Trainings- und Testindices
+  train_ind <- which(folds != i)
+  test_ind  <- which(folds == i)
+  
+  # Trainings- und Testdatensätze
+  train_data <- train[train_ind, ]
+  test_data  <- train[test_ind, ]
+  
+  # GAM-Modell fitten (einfaches Beispiel)
+  model <- lm(Listening_Time_minutes ~ Episode_Length_minutes,
+    data = train_data
+  )
+  
+  # Vorhersage auf Testdaten
+  preds <- predict(model, newdata = test_data)
+  
+  # RMSE für diesen Fold
+  actuals <- test_data$Listening_Time_minutes
+  rmse    <- sqrt(mean((actuals - preds)^2))
+  cv_rmse[i] <- rmse
+  
+  # Prüfen, ob dieses Modell besser ist als das bisher beste
+  if(rmse < best_rmse) {
+    best_rmse  <- rmse
+    best_model <- model
+  }
+}
+
+# 3. Durchschnittlicher RMSE über alle Folds
+mean_cv_rmse <- mean(cv_rmse)
+mean_cv_rmse
+
+# 'best_model' enthält jetzt das Modell mit dem geringsten RMSE 
+# in seinem jeweiligen Fold.
+summary(best_model)
+
+```
+
+
+## GAM
+```{r}
+set.seed(123)     # Für reproduzierbare Zufallsergebnisse
+K <- 5            # Anzahl der Folds
+N <- nrow(train)
+
+# 1. Erstelle einen Zufalls-Vektor, der jedem Datenpunkt 
+#    einen Fold (1..K) zuweist:
+folds <- sample(rep(1:K, length.out = N))
+
+# 2. Crossvalidation-Schleife
+cv_rmse <- numeric(K)  # Hier sammeln wir die RMSE-Werte pro Fold
+
+# Variablen zum Speichern des "besten" Modells und seines RMSE:
+best_model <- NULL
+best_rmse  <- Inf
+
+for (i in 1:K) {
+  # Trainings- und Testindices
+  train_ind <- which(folds != i)
+  test_ind  <- which(folds == i)
+  
+  # Trainings- und Testdatensätze
+  train_data <- train[train_ind, ]
+  test_data  <- train[test_ind, ]
+  
+  # GAM-Modell fitten (einfaches Beispiel)
+  model <- mgcv::gam(
+    Listening_Time_minutes ~ s(Episode_Length_minutes) ,
+    family = gaussian(),
+    data = train_data,
+    method = "REML"
+  )
+  
+  #s(Podcast_Name, bs = "re")
+  
+  # Vorhersage auf Testdaten
+  preds <- predict(model, newdata = test_data)
+  
+  # RMSE für diesen Fold
+  actuals <- test_data$Listening_Time_minutes
+  rmse    <- sqrt(mean((actuals - preds)^2))
+  cv_rmse[i] <- rmse
+  
+  # Prüfen, ob dieses Modell besser ist als das bisher beste
+  if(rmse < best_rmse) {
+    best_rmse  <- rmse
+    best_model <- model
+  }
+}
+
+# 3. Durchschnittlicher RMSE über alle Folds
+mean_cv_rmse <- mean(cv_rmse)
+mean_cv_rmse
+
+# 'best_model' enthält jetzt das Modell mit dem geringsten RMSE 
+# in seinem jeweiligen Fold.
+summary(best_model)
+
+
+```
+
+
+## Random Forest
+```{r}
+
+set.seed(123)     # Für reproduzierbare Zufallsergebnisse
+K <- 5            # Anzahl der Folds
+N <- nrow(train)
+
+# 1. Erstelle einen Zufalls-Vektor, der jedem Datenpunkt 
+#    einen Fold (1..K) zuweist:
+folds <- sample(rep(1:K, length.out = N))
+
+# 2. Crossvalidation-Schleife
+cv_rmse <- numeric(K)  # Hier sammeln wir die RMSE-Werte pro Fold
+
+# Variablen zum Speichern des "besten" Modells und seines RMSE:
+best_model <- NULL
+best_rmse  <- Inf
+
+for (i in 1:K) {
+  # Trainings- und Testindices
+  train_ind <- which(folds != i)
+  test_ind  <- which(folds == i)
+  
+  # Trainings- und Testdatensätze
+  train_data <- train[train_ind, ]
+  test_data  <- train[test_ind, ]
+  
+  # Random Forest via ranger
+  rf_model <- ranger(
+    Listening_Time_minutes ~ Episode_Length_minutes + Guest_Popularity_percentage + Host_Popularity_percentage + Number_of_Ads,
+    data       = train_data,
+    num.trees  = 10,
+    mtry       = floor(sqrt(4)), # number of trees
+  )
+  
+  # Vorhersage auf Testdaten
+  # Note: 'predict()' returns a list; '$predictions' is the actual numeric vector
+  preds_obj <- predict(rf_model, data = test_data)
+  preds     <- preds_obj$predictions
+  
+  # RMSE für diesen Fold
+  actuals <- test_data$Listening_Time_minutes
+  rmse    <- sqrt(mean((actuals - preds)^2))
+  cv_rmse[i] <- rmse
+  
+  # Prüfen, ob dieses Modell besser ist als das bisher beste
+  if (rmse < best_rmse) {
+    best_rmse  <- rmse
+    best_model <- rf_model
+  }
+}
+
+# 3. Durchschnittlicher RMSE über alle Folds
+mean_cv_rmse <- mean(cv_rmse)
+mean_cv_rmse
+
+# 'best_model' enthält jetzt das Modell mit dem geringsten RMSE 
+# in seinem jeweiligen Fold.
+
+# Instead of summary(best_model), just print it or inspect its elements:
+best_model
+
+```
+
+## Gradient‐Boosted Decision Trees
+
+### Best Model yet
+
+```{r}
+#Train imputation
+set.seed(123)      # For reproducible randomization
+K <- 5             # Number of folds
+N <- nrow(train)
+
+# 1. Assign each row to one of K folds randomly
+folds <- sample(rep(1:K, length.out = N))
+
+# 2. Storage for RMSE in each fold
+cv_rmse   <- numeric(K)
+
+# Keep track of the best model across folds
+best_model <- NULL
+best_rmse  <- Inf
+
+# XGBoost hyperparameters (tweak to your needs)
+params <- list(
+  objective = "reg:squarederror",
+  max_depth = 6,
+  eta       = 0.1
+  # You can add other params here, e.g. subsample, colsample_bytree, etc.
+)
+
+# 3. Cross‐validation loop
+for (i in 1:K) {
+  # Training and test indices
+  train_ind <- which(folds != i)
+  test_ind  <- which(folds == i)
+  
+  # Subset your data
+  train_data <- train[train_ind, ]
+  test_data  <- train[test_ind, ]
+
+  # Prepare matrices for XGBoost
+  # -- Here we define X columns for training/test. 
+  #    Adjust to match the predictors you want to use:
+  X_train <- as.matrix(train_data[, c("Episode_Length_minutes",
+                                      "Guest_Popularity_percentage",
+                                      "Host_Popularity_percentage",
+                                      "Number_of_Ads")])
+  y_train <- train_data$Listening_Time_minutes
+  
+  X_test <- as.matrix(test_data[, c("Episode_Length_minutes",
+                                    "Guest_Popularity_percentage",
+                                    "Host_Popularity_percentage",
+                                    "Number_of_Ads")])
+  y_test <- test_data$Listening_Time_minutes
+  
+  # Convert to xgb.DMatrix
+  dtrain <- xgb.DMatrix(data = X_train, label = y_train)
+  dtest  <- xgb.DMatrix(data = X_test,  label = y_test)
+
+  # Train XGBoost model
+  # nrounds is how many boosting iterations (trees) you build
+  xgb_model <- xgb.train(
+    params  = params,
+    data    = dtrain,
+    nrounds = 100# Increase if you want to train more trees
+  )
+  
+  # Predictions
+  preds <- predict(xgb_model, newdata = dtest)
+  
+  # Compute RMSE
+  rmse <- sqrt(mean((y_test - preds)^2))
+  cv_rmse[i] <- rmse
+  
+  # Check if this fold's model is better
+  if (rmse < best_rmse) {
+    best_rmse  <- rmse
+    best_model <- xgb_model
+  }
+}
+
+# 4. Average RMSE across folds
+mean_cv_rmse <- mean(cv_rmse)
+mean_cv_rmse
+
+# best_model is the XGBoost model that yielded the lowest RMSE in its fold
+best_model
+
+
+```
+
+
+### Brt with Genre and Sentiment
+```{r}
+set.seed(123)      # For reproducible randomization
+K <- 10             # Number of folds
+N <- nrow(train)
+
+# 1. Assign each row to one of K folds randomly
+folds <- sample(rep(1:K, length.out = N))
+
+# 2. Storage for RMSE in each fold
+cv_rmse   <- numeric(K)
+
+# Keep track of the best model across folds
+best_model <- NULL
+best_rmse  <- Inf
+
+# XGBoost hyperparameters (tweak to your needs)
+params <- list(
+  objective = "reg:squarederror",
+  max_depth = 6,
+  eta       = 0.1
+  # You can add other params here, e.g. subsample, colsample_bytree, etc.
+)
+
+# 3. Cross‐validation loop
+for (i in 1:K) {
+  # Training and test indices
+  train_ind <- which(folds != i)
+  test_ind  <- which(folds == i)
+  
+  # Subset your data
+  train_data <- train[train_ind, ]
+  test_data  <- train[test_ind, ]
+  
+  # Prepare matrices for XGBoost
+  # Here we include Episode_Sentiment as a factor.
+  # model.matrix() wandelt alle Faktoren (hier Episode_Sentiment) in Dummy-Variablen um.
+  X_train <- model.matrix(~ Episode_Length_minutes +
+                            Guest_Popularity_percentage +
+                            Host_Popularity_percentage +
+                            Number_of_Ads +
+                            Podcast_Name - 1, data = train_data)
+  y_train <- train_data$Listening_Time_minutes
+  
+  X_test <- model.matrix(~ Episode_Length_minutes +
+                           Guest_Popularity_percentage +
+                           Host_Popularity_percentage +
+                           Number_of_Ads +
+                           Podcast_Name - 1, data = test_data)
+  y_test <- test_data$Listening_Time_minutes
+  
+  # Convert to xgb.DMatrix
+  dtrain <- xgb.DMatrix(data = X_train, label = y_train)
+  dtest  <- xgb.DMatrix(data = X_test, label = y_test)
+  
+  # Train XGBoost model
+  # nrounds is how many boosting iterations (trees) you build
+  xgb_model <- xgb.train(
+    params  = params,
+    data    = dtrain,
+    nrounds = 100  # Increase if you want to train more trees
+  )
+  
+  # Predictions
+  preds <- predict(xgb_model, newdata = dtest)
+  
+  # Compute RMSE
+  rmse_fold <- sqrt(mean((y_test - preds)^2))
+  cv_rmse[i] <- rmse_fold
+  
+  # Check if this fold's model is better
+  if (rmse_fold < best_rmse) {
+    best_rmse  <- rmse_fold
+    best_model <- xgb_model
+  }
+}
+
+# 4. Average RMSE across folds
+mean_cv_rmse <- mean(cv_rmse)
+print(mean_cv_rmse)
+
+# best_model is the XGBoost model that yielded the lowest RMSE in its fold
+print(best_model)
+```
+
+
+
+
+
+### Feature Importance
+```{r}
+# 1. Importance als Datentabelle extrahieren
+importance_table <- xgb.importance(model = best_model)
+importance_table
+
+# 2. (Optional) Plotten der Feature-Importance
+xgb.plot.importance(importance_table)
+
+```
+### Final Model
+```{r}
+# Angenommen, train enthält dein gesamtes Trainingsdatenset.
+
+# 1. Bereite alle Trainingsdaten für XGBoost vor
+X_all <- as.matrix(train[, c("Episode_Length_minutes",
+                             "Guest_Popularity_percentage",
+                             "Host_Popularity_percentage",
+                             "Number_of_Ads")])
+y_all <- train$Listening_Time_minutes
+
+# Erstelle das DMatrix-Objekt
+dtrain_all <- xgb.DMatrix(data = X_all, label = y_all)
+
+# 2. Trainiere das finale Modell auf allen Trainingsdaten
+# Wir übernehmen dabei die Parameter und nrounds aus der CV-Phase
+final_model <- xgb.train(
+  params  = params,
+  data    = dtrain_all,
+  nrounds = 100   # Passe diesen Wert an, falls deine CV-Optimierung einen anderen Wert nahelegt
+)
+
+# Optional: Überprüfe die Performance des finalen Modells auf den Trainingsdaten
+pred_all <- predict(final_model, newdata = dtrain_all)
+rmse_all <- sqrt(mean((y_all - pred_all)^2))
+print(paste("RMSE auf den Trainingsdaten:", rmse_all))
+
+```
+
+
+### Export
+
+```{r}
+# Convert relevant columns into a matrix
+X_test <- as.matrix(test[, c("Episode_Length_minutes",
+                             "Guest_Popularity_percentage",
+                             "Host_Popularity_percentage",
+                             "Number_of_Ads")])
+
+# Create an xgb.DMatrix (no label since it's "test")
+dtest <- xgb.DMatrix(data = X_test)
+
+
+test_preds <- predict(best_model, newdata = dtest)
+result <- data.frame(
+  id         = test$id,
+  Listening_Time_minutes = test_preds
+)
+head(result)
+
+
+write.csv(result, "submission_brt_outlier.csv", row.names = FALSE)
+```
+
+
+
+
+

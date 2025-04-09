@@ -1,0 +1,138 @@
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("../R/settings.R", local = knitr::knit_global())
+source("../R/data.R", local = knitr::knit_global())
+source("../R/utils.R", local = knitr::knit_global())
+
+```
+
+
+#Prepocessing
+```{r preprocessing}
+preprocessing <- character()
+my_source("../R/imputation.R", local = knitr::knit_global())
+my_source("../R/outlier.R", local = knitr::knit_global())
+#my_source("../R/feature_engeneering.R", local = knitr::knit_global())
+```
+
+
+
+# LM
+```{r}
+set.seed(123)     # Für reproduzierbare Zufallsergebnisse
+K <- 5            # Anzahl der Folds
+N <- nrow(train)
+
+# 1. Erstelle einen Zufalls-Vektor, der jedem Datenpunkt 
+#    einen Fold (1..K) zuweist:
+folds <- sample(rep(1:K, length.out = N))
+
+# 2. Crossvalidation-Schleife
+cv_rmse <- numeric(K)  # Hier sammeln wir die RMSE-Werte pro Fold
+
+# Variablen zum Speichern des "besten" Modells und seines RMSE:
+best_model <- NULL
+best_rmse  <- Inf
+
+for (i in 1:K) {
+  # Trainings- und Testindices
+  train_ind <- which(folds != i)
+  test_ind  <- which(folds == i)
+  
+  # Trainings- und Testdatensätze
+  train_data <- train[train_ind, ]
+  test_data  <- train[test_ind, ]
+  
+  # GAM-Modell fitten (einfaches Beispiel)
+  model <- lm(Listening_Time_minutes ~ Episode_Length_minutes + Host_Popularity_percentage + Guest_Popularity_percentage + Number_of_Ads,
+    data = train_data
+  )
+  
+  # Vorhersage auf Testdaten
+  preds <- predict(model, newdata = test_data)
+  
+  # RMSE für diesen Fold
+  actuals <- test_data$Listening_Time_minutes
+  rmse    <- calc_rmse(actuals, preds)
+  cv_rmse[i] <- rmse
+  
+  # Prüfen, ob dieses Modell besser ist als das bisher beste
+  if(rmse < best_rmse) {
+    best_rmse  <- rmse
+    best_model <- model
+  }
+}
+
+# 3. Durchschnittlicher RMSE über alle Folds
+mean_cv_rmse <- mean(cv_rmse)
+save_model(mean_cv_rmse, best_model)
+  
+
+mean_cv_rmse
+
+
+```
+
+
+# GAM
+```{r}
+set.seed(123)     # Für reproduzierbare Zufallsergebnisse
+K <- 5            # Anzahl der Folds
+N <- nrow(train)
+
+# 1. Erstelle einen Zufalls-Vektor, der jedem Datenpunkt 
+#    einen Fold (1..K) zuweist:
+folds <- sample(rep(1:K, length.out = N))
+
+# 2. Crossvalidation-Schleife
+cv_rmse <- numeric(K)  # Hier sammeln wir die RMSE-Werte pro Fold
+
+# Variablen zum Speichern des "besten" Modells und seines RMSE:
+best_model <- NULL
+best_rmse  <- Inf
+
+for (i in 1:K) {
+  # Trainings- und Testindices
+  train_ind <- which(folds != i)
+  test_ind  <- which(folds == i)
+  
+  # Trainings- und Testdatensätze
+  train_data <- train[train_ind, ]
+  test_data  <- train[test_ind, ]
+  
+  # GAM-Modell fitten (einfaches Beispiel)
+  model <- mgcv::gam(
+    Listening_Time_minutes ~ s(Episode_Length_minutes) ,
+    family = gaussian(),
+    data = train_data,
+    method = "REML"
+  )
+  
+  #s(Podcast_Name, bs = "re")
+  
+  # Vorhersage auf Testdaten
+  preds <- predict(model, newdata = test_data)
+  
+  # RMSE für diesen Fold
+  actuals <- test_data$Listening_Time_minutes
+  rmse <- calc_rmse(actuals, preds)
+  cv_rmse[i] <- rmse
+  
+  # Prüfen, ob dieses Modell besser ist als das bisher beste
+  if(rmse < best_rmse) {
+    best_rmse  <- rmse
+    best_model <- model
+  }
+}
+
+# 3. Durchschnittlicher RMSE über alle Folds
+mean_cv_rmse <- mean(cv_rmse)
+save_model(mean_cv_rmse, best_model)
+
+mean_cv_rmse
+
+
+```
+
