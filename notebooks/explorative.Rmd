@@ -1,0 +1,78 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("../R/settings.R", local = knitr::knit_global())
+source("../R/data.R", local = knitr::knit_global())
+source("../R/utils.R", local = knitr::knit_global())
+```
+
+#Prepocessing
+```{r preprocessing}
+preprocessing <- character()
+my_source("../R/outlier.R", local = knitr::knit_global())
+my_source("../R/imputation.R", local = knitr::knit_global())
+#my_source("../R/feature_engeneering.R", local = knitr::knit_global())
+```
+
+```{r}
+train[,num_features] <- scale(train[,num_features])
+```
+
+```{r}
+pca_result <- prcomp(train[,num_features], center = TRUE, scale. = FALSE)
+```
+
+
+```{r}
+# Angenommen, pca_result <- prcomp(data_scaled, center = TRUE, scale. = TRUE)
+# Ladungen (Rotation)
+rotation_mat <- pca_result$rotation 
+
+# Anzahl der Komponenten
+k <- ncol(rotation_mat)
+
+# Schleife für alle Paare: (PC1,PC2), (PC1,PC3), (PC2,PC3), ...
+for(i in 1:(k-1)){
+  for(j in (i+1):k){
+    # Teilmatrix: Spalten i und j
+    rot_ij <- rotation_mat[, c(i, j)]
+    
+    # Plot
+    plot(rot_ij,
+         type = "n",
+         xlab = paste0("PC", i),
+         ylab = paste0("PC", j),
+         xlim = c(-1, 1),
+         ylim = c(-1, 1),
+         asp = 1,
+         main = paste("PCA Vektoren (Ladungen) - PC", i, "vs. PC", j))
+    
+    arrows(0, 0, rot_ij[,1], rot_ij[,2], length = 0.1, col = "blue")
+    text(rot_ij, labels = rownames(rot_ij), pos = 4)
+    
+    # Einheitskreis
+    symbols(0, 0, circles = 1, inches = FALSE, add = TRUE, lty = 2)
+    
+    # Kurze Pause, damit jeder Plot sichtbar bleibt
+    readline(prompt = "Weiter mit ENTER...")
+  }
+}
+```
+
+```{r}
+# Varianz pro Komponente
+var_explained <- pca_result$sdev^2
+# Anteil an Gesamtvarianz
+prop_var_explained <- var_explained / sum(var_explained)
+
+# Scree-Plot
+plot(prop_var_explained,
+     ylim = c(0, 1),
+     xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     type = "b",  # Linien und Punkte
+     main = "Scree-Plot der PCA")
+```
+
+
+

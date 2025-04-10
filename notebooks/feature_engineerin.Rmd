@@ -1,0 +1,8 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("../R/settings.R", local = knitr::knit_global())
+source("../R/data.R", local = knitr::knit_global())
+source("../R/utils.R", local = knitr::knit_global())
+```
+
