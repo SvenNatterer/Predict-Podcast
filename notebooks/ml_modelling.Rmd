@@ -10,8 +10,8 @@ source("../R/utils.R", local = knitr::knit_global())
 ```{r preprocessing}
 preprocessing <- character()
 my_source("../R/outlier.R", local = knitr::knit_global())
-my_source("../R/imputation.R", local = knitr::knit_global())
-#my_source("../R/feature_engeneering.R", local = knitr::knit_global())
+#my_source("../R/imputation.R", local = knitr::knit_global())
+my_source("../R/feature_engeneering.R", local = knitr::knit_global())
 
 ```
 
@@ -85,7 +85,7 @@ mean_cv_rmse
 set.seed(123)      # For reproducible randomization
 K <- 5             # Number of folds
 N <- nrow(train)
-n <- 100           # Number of Boosting Rounds
+n <- 20000          # Number of Boosting Rounds
 
 #one of {num_features(only numerical base features),
 #        all_features (every feature + engineered features),
@@ -96,7 +96,7 @@ features <- num_features
 params <- list(
   objective = "reg:squarederror",
   max_depth = 6,
-  eta       = 0.1
+  eta       = 0.02
 )
 
 
